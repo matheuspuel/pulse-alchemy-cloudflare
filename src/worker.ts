@@ -8,6 +8,7 @@ import {
   HttpApiError,
   HttpApiGroup,
   HttpApiMiddleware,
+  HttpApiSchema,
   HttpApiSecurity,
 } from 'effect/http-api'
 import { MonitorRepository } from './repositories/Monitor'
@@ -22,11 +23,11 @@ class BearerTokenAuthentication extends HttpApiMiddleware.Service<
   security: { bearer: HttpApiSecurity.bearer },
 }) {}
 
-const Api = HttpApi.make('WorkerApi')
+export const WorkerApi = HttpApi.make('WorkerApi')
   .add(
     HttpApiGroup.make('App').add(
       HttpApiEndpoint.get('health', '/health', {
-        success: Schema.Literal('ok'),
+        success: Schema.Literal('ok').pipe(HttpApiSchema.asText()),
       }),
     ),
     HttpApiGroup.make('Monitors').add(
@@ -70,14 +71,14 @@ export default Cloudflare.Worker(
   { main: import.meta.url },
   Effect.gen(function* () {
     const monitorRepository = yield* MonitorRepository
-    const HttpApiLayer = HttpApiBuilder.layer(Api).pipe(
+    const HttpApiLayer = HttpApiBuilder.layer(WorkerApi).pipe(
       Layer.provide(
-        HttpApiBuilder.group(Api, 'App', _ =>
+        HttpApiBuilder.group(WorkerApi, 'App', _ =>
           _.handleAll({ health: () => Effect.succeed('ok') }),
         ),
       ),
       Layer.provide(
-        HttpApiBuilder.group(Api, 'Monitors', _ =>
+        HttpApiBuilder.group(WorkerApi, 'Monitors', _ =>
           _.handleAll({
             list: () =>
               monitorRepository.list().pipe(

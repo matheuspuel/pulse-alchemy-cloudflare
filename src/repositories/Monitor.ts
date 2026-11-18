@@ -35,16 +35,14 @@ export class MonitorRepository extends Context.Service<
           Effect.gen(function* () {
             const list = yield* Schema.decodeUnknownEffect(
               Schema.Array(Schema.toCodecJson(Monitor)),
-            )(yield* sql`SELECT *, updated_at as "updatedAt" FROM monitors`)
+            )(yield* sql`SELECT * FROM monitors`)
             return list
           }),
         get: ({ id }) =>
           Effect.gen(function* () {
             const list = yield* Schema.decodeUnknownEffect(
               Schema.Array(Schema.toCodecJson(Monitor)),
-            )(
-              yield* sql`SELECT *, updated_at as "updatedAt" FROM monitors WHERE id = ${id}`,
-            )
+            )(yield* sql`SELECT * FROM monitors WHERE id = ${id}`)
             if (!list[0]) return yield* new NoSuchElementError()
             return list[0]
           }),

@@ -5,7 +5,9 @@
   "main": "index.js",
   "scripts": {
     "dev": "alchemy dev",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "typecheck": "tsc",
+    "test": "vitest",
+    "integration": "vitest --config=vitest.integration.config.ts"
   },
   "keywords": [],
   "author": "",
@@ -24,5 +26,11 @@
     "@effect/platform-node": "^4.1.4",
     "alchemy": "2.0.0-beta.87",
     "effect": "^4.1.4"
+  },
+  "devDependencies": {
+    "@alchemy.run/test": "2.0.0-beta.87",
+    "@effect/vitest": "^4.1.4",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
   }
 }

@@ -11,7 +11,7 @@ export default Alchemy.Stack(
     const worker = yield* Worker
     const database = yield* Database
     return {
-      worker: worker.url,
+      workerUrl: worker.url,
       database: database.databaseName,
     }
   }),
