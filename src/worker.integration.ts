@@ -1,7 +1,7 @@
 import * as Cloudflare from '@alchemy.run/cloudflare'
 import { expect } from '@alchemy.run/test'
 import * as Test from '@alchemy.run/test/Vitest'
-import { Config, Effect, Layer, Redacted } from 'effect'
+import { Config, Duration, Effect, Layer, Redacted } from 'effect'
 import { HttpClient, HttpClientRequest } from 'effect/http'
 import { HttpApiClient, HttpApiError } from 'effect/http-api'
 import Stack from '../alchemy.run'
@@ -62,15 +62,23 @@ test(
 
     expect(yield* api.Monitors.list()).toStrictEqual([])
     const created = yield* api.Monitors.create({
-      payload: { url: 'https://example.com' },
+      payload: { url: 'https://example.com', interval: Duration.seconds(120) },
     })
     expect(
       yield* api.Monitors.get({ params: { id: created.id } }),
     ).toStrictEqual(
-      Monitor.make({ id: created.id, url: 'https://example.com' }),
+      Monitor.make({
+        id: created.id,
+        url: 'https://example.com',
+        interval: Duration.seconds(120),
+      }),
     )
     expect(yield* api.Monitors.list()).toStrictEqual([
-      Monitor.make({ id: created.id, url: 'https://example.com' }),
+      Monitor.make({
+        id: created.id,
+        url: 'https://example.com',
+        interval: Duration.seconds(120),
+      }),
     ])
     yield* api.Monitors.delete({ params: { id: created.id } })
     expect(
