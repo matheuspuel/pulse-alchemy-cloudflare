@@ -6,3 +6,12 @@ export class Check extends Schema.Class<Check>('Check')({
   ok: Schema.Boolean,
   checkedAt: Schema.DateTimeUtc,
 }) {}
+
+export class CheckResult extends Schema.Opaque<CheckResult>()(
+  Schema.Struct({
+    ok: Schema.Boolean,
+    scheduledTime: Schema.DateTimeUtc,
+    checkedAt: Schema.DateTimeUtc,
+    interval: Schema.Duration,
+  }),
+) {}

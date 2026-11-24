@@ -21,11 +21,13 @@ import {
   HttpApiSchema,
   HttpApiSecurity,
 } from 'effect/http-api'
+import MonitorDO from './monitorDO'
 import { Checks, ChecksDead, ChecksMessage } from './queues'
 import { CheckRepository } from './repositories/Check'
 import { DeadLetterRepository } from './repositories/DeadLetter'
 import { MonitorRepository } from './repositories/Monitor'
-import { Check } from './types/Check'
+import { Check, type CheckResult } from './types/Check'
+import { Incident } from './types/Incident'
 import { Monitor } from './types/Monitor'
 import { PlatformServices } from './utils/PlatformServices'
 import { isDue } from './utils/due'
@@ -65,6 +67,16 @@ export const WorkerApi = HttpApi.make('WorkerApi')
         params: Schema.Struct({ id: Schema.String }),
         success: Schema.Void,
       }),
+      HttpApiEndpoint.get('status', '/monitors/:id/status', {
+        params: Schema.Struct({ id: Schema.String }),
+        success: Schema.Literals(['up', 'down', 'unknown']),
+        error: HttpApiError.NotFound,
+      }),
+      HttpApiEndpoint.get('incidents', '/monitors/:id/incidents', {
+        params: Schema.Struct({ id: Schema.String }),
+        success: Schema.Array(Incident),
+        error: HttpApiError.NotFound,
+      }),
       HttpApiEndpoint.get('checks', '/monitors/:id/checks', {
         params: Schema.Struct({ id: Schema.String }),
         success: Schema.Array(Check),
@@ -98,6 +110,7 @@ export default Cloudflare.Worker(
       HttpClient.timeout('10 seconds'),
     )
     const monitorRepository = yield* MonitorRepository
+    const monitorDO = yield* MonitorDO
     const checkRepository = yield* CheckRepository
     const deadLetterRepository = yield* DeadLetterRepository
     const checksWrite = yield* Cloudflare.Queues.WriteQueue(Checks)
@@ -142,12 +155,19 @@ export default Cloudflare.Worker(
             const result = yield* monitorHttpClient
               .get(data.monitor.url)
               .pipe(Effect.result)
-            yield* checkRepository.create({
-              monitorId: data.monitor.id,
-              scheduledTime: data.scheduledTime,
+            const checkResult: CheckResult = {
               ok: Result.isSuccess(result),
+              scheduledTime: data.scheduledTime,
               checkedAt: now,
+              interval: data.monitor.interval,
+            }
+            yield* checkRepository.create({
+              ...checkResult,
+              monitorId: data.monitor.id,
             })
+            yield* (yield* monitorDO.getByName(data.monitor.id)).recordResult(
+              checkResult,
+            )
             message.ack()
           }).pipe(
             Effect.catchCause(e =>
@@ -199,6 +219,31 @@ export default Cloudflare.Worker(
             delete: ({ params: { id } }) =>
               monitorRepository.delete({ id }).pipe(
                 Effect.catchTags({
+                  SqlError: Effect.die,
+                }),
+              ),
+            incidents: ({ params: { id } }) =>
+              Effect.gen(function* () {
+                yield* monitorRepository.get({ id })
+                return yield* (yield* monitorDO.getByName(id)).getIncidents()
+              }).pipe(
+                Effect.catchTags({
+                  NoSuchElementError: () => new HttpApiError.NotFound(),
+                  RpcClientError: Effect.die,
+                  SchemaError: Effect.die,
+                  SqlError: Effect.die,
+                }),
+              ),
+            status: ({ params: { id } }) =>
+              Effect.gen(function* () {
+                yield* monitorRepository.get({ id })
+                const state = yield* (yield* monitorDO.getByName(id)).getState()
+                return state.status
+              }).pipe(
+                Effect.catchTags({
+                  NoSuchElementError: () => new HttpApiError.NotFound(),
+                  RpcClientError: Effect.die,
+                  SchemaError: Effect.die,
                   SqlError: Effect.die,
                 }),
               ),

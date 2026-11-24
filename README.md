@@ -6,11 +6,21 @@ This project is an experiment to evaluate the development experience of [Alchemy
 
 ## First impressions
 
-Alchemy makes it very simple and fast to deploy and update cloud infrastructure. It significantly shortens the development loop.
+Alchemy makes it very simple and fast to deploy and update cloud infrastructure correctly. It significantly shortens the development loop.
 
-The abstraction makes it easy to design and understand the architecture and helps to deploy only what is necessary.
+The abstractions make it easy to design and understand the architecture and helps to deploy only what is necessary.
 
 The documentation is comprehensive and explains what are the cloud resources it supports and when to use them.
+
+## Cautions
+
+### Durable Objects
+
+A Durable Object is single-threaded, it runs one call at a time, but it only holds while the call is using storage and synchronous operations. Any await on something outside storage, like a `fetch`, lets other calls run in between.
+Reads and writes through the storage API are protected by input gates, so a read followed by a write is safe. Anything else you await is not, so re-check state after it.
+
+Atomicity is separate from isolation. Each storage call is atomic on its own, but a sequence of calls is all-or-nothing only if Cloudflare batches the writes (no `await` between them) or you wrap them in a transaction.
+Transactions only cover the object's own storage: not HTTP calls, other objects, or JavaScript variables. So persist the intent first (the outbox), then do the external call, and make it safe to repeat.
 
 ## Failure experiments
 
