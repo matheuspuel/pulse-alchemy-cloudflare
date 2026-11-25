@@ -4,25 +4,10 @@ import { Array, DateTime, Duration, Effect, Schema } from 'effect'
 import { Rpc, RpcGroup } from 'effect/rpc'
 import { CheckResult } from './types/Check'
 import { Incident } from './types/Incident'
-
-class State extends Schema.Opaque<State>()(
-  Schema.Struct({
-    status: Schema.Literals(['unknown', 'up', 'down']),
-    failures: Schema.Number,
-    lastSchedule: Schema.NullOr(Schema.DateTimeUtc),
-    stale: Schema.Boolean,
-  }),
-) {
-  static initial: State = State.make({
-    status: 'unknown',
-    failures: 0,
-    lastSchedule: null,
-    stale: false,
-  })
-}
+import { MonitorState } from './types/Monitor'
 
 export class MonitorDORpc extends RpcGroup.make(
-  Rpc.make('getState', { success: State }),
+  Rpc.make('getState', { success: MonitorState }),
   Rpc.make('getIncidents', { success: Schema.Array(Incident) }),
   Rpc.make('recordResult', { payload: CheckResult }),
 ) {}
@@ -92,13 +77,13 @@ export default class MonitorDO extends Cloudflare.RpcDurableObject<MonitorDO>()(
 ) {}
 
 export const step = (args: {
-  state: State
+  state: MonitorState
   check: CheckResult
   options: { failuresToDown: number }
 }): {
   applied: boolean
   transition: 'down' | 'up' | null
-  state: State
+  state: MonitorState
 } => {
   if (
     args.state.lastSchedule &&
@@ -125,6 +110,8 @@ export const step = (args: {
       status,
       failures,
       lastSchedule: DateTime.toUtc(args.check.scheduledTime),
+      lastCheckedAt: DateTime.toUtc(args.check.checkedAt),
+      lastLatency: args.check.ok ? args.check.latency : args.state.lastLatency,
       stale: false,
     },
   }
@@ -134,14 +121,20 @@ const StateStore = Effect.gen(function* () {
   const durableState = yield* Cloudflare.DurableObjectState
   const get = Effect.gen(function* () {
     const data = yield* durableState.storage.get('state')
-    if (!data) return State.initial
-    return yield* Schema.decodeUnknownEffect(Schema.toCodecJson(State))(data)
+    if (!data) return MonitorState.initial
+    return yield* Schema.decodeUnknownEffect(Schema.toCodecJson(MonitorState))(
+      data,
+    )
   })
-  const set = Effect.fn(function* (state: State) {
-    const data = yield* Schema.encodeEffect(Schema.toCodecJson(State))(state)
+  const set = Effect.fn(function* (state: MonitorState) {
+    const data = yield* Schema.encodeEffect(Schema.toCodecJson(MonitorState))(
+      state,
+    )
     yield* durableState.storage.put('state', data)
   })
-  const update = Effect.fn(function* (fn: (state: State) => State) {
+  const update = Effect.fn(function* (
+    fn: (state: MonitorState) => MonitorState,
+  ) {
     yield* set(fn(yield* get))
   })
   return { get, set, update }

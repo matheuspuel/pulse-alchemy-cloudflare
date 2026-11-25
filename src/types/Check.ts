@@ -12,6 +12,7 @@ export class CheckResult extends Schema.Opaque<CheckResult>()(
     ok: Schema.Boolean,
     scheduledTime: Schema.DateTimeUtc,
     checkedAt: Schema.DateTimeUtc,
+    latency: Schema.Duration,
     interval: Schema.Duration,
   }),
 ) {}

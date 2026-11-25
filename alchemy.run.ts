@@ -9,9 +9,18 @@ export default Alchemy.Stack(
   { providers: Cloudflare.providers(), state: Cloudflare.state() },
   Effect.gen(function* () {
     const worker = yield* Worker
+    const web = yield* Cloudflare.Website.Vite('Website', {
+      rootDir: './web',
+      assets: { notFoundHandling: 'single-page-application' },
+      env: {
+        VITE_PUBLIC_URL: Cloudflare.Worker.URL,
+        VITE_API_URL: worker.url.as<string>(),
+      },
+    })
     const database = yield* Database
     return {
       workerUrl: worker.url,
+      webUrl: web.url,
       database: database.databaseName,
     }
   }),

@@ -10,7 +10,12 @@ import {
   Schema,
   Stream,
 } from 'effect'
-import { HttpClient, HttpRouter } from 'effect/http'
+import {
+  HttpClient,
+  HttpRouter,
+  HttpServerRequest,
+  HttpServerResponse,
+} from 'effect/http'
 import {
   HttpApi,
   HttpApiBuilder,
@@ -21,6 +26,7 @@ import {
   HttpApiSchema,
   HttpApiSecurity,
 } from 'effect/http-api'
+import HubDO from './hubDO'
 import MonitorDO from './monitorDO'
 import { Checks, ChecksDead, ChecksMessage } from './queues'
 import { CheckRepository } from './repositories/Check'
@@ -28,7 +34,7 @@ import { DeadLetterRepository } from './repositories/DeadLetter'
 import { MonitorRepository } from './repositories/Monitor'
 import { Check, type CheckResult } from './types/Check'
 import { Incident } from './types/Incident'
-import { Monitor } from './types/Monitor'
+import { Monitor, MonitorEvent } from './types/Monitor'
 import { PlatformServices } from './utils/PlatformServices'
 import { isDue } from './utils/due'
 
@@ -111,6 +117,7 @@ export default Cloudflare.Worker(
     )
     const monitorRepository = yield* MonitorRepository
     const monitorDO = yield* MonitorDO
+    const hubDO = yield* HubDO
     const checkRepository = yield* CheckRepository
     const deadLetterRepository = yield* DeadLetterRepository
     const checksWrite = yield* Cloudflare.Queues.WriteQueue(Checks)
@@ -151,22 +158,30 @@ export default Cloudflare.Worker(
             const data = yield* Schema.decodeUnknownEffect(
               Schema.toCodecJson(ChecksMessage),
             )(message.body)
-            const now = yield* DateTime.now
-            const result = yield* monitorHttpClient
+            const startedAt = yield* DateTime.now
+            const [duration, result] = yield* monitorHttpClient
               .get(data.monitor.url)
-              .pipe(Effect.result)
+              .pipe(Effect.result, Effect.timed)
+            const monitorStub = yield* monitorDO.getByName(data.monitor.id)
             const checkResult: CheckResult = {
               ok: Result.isSuccess(result),
               scheduledTime: data.scheduledTime,
-              checkedAt: now,
+              checkedAt: startedAt,
+              latency: duration,
               interval: data.monitor.interval,
             }
             yield* checkRepository.create({
               ...checkResult,
               monitorId: data.monitor.id,
             })
-            yield* (yield* monitorDO.getByName(data.monitor.id)).recordResult(
-              checkResult,
+            yield* monitorStub.recordResult(checkResult)
+            const state = yield* monitorStub.getState()
+            yield* hubDO.getByName('default').broadcast(
+              yield* MonitorEvent.toJsonEncoded({
+                _tag: 'changeMonitorState',
+                monitorId: data.monitor.id,
+                state: state,
+              }),
             )
             message.ack()
           }).pipe(
@@ -262,7 +277,21 @@ export default Cloudflare.Worker(
         ),
       ),
     )
-    return { fetch: yield* HttpRouter.toHttpEffect(HttpApiLayer) }
+    const apiHandler = yield* HttpRouter.toHttpEffect(HttpApiLayer)
+    return {
+      fetch: Effect.gen(function* () {
+        const request = yield* HttpServerRequest.HttpServerRequest
+        if (request.url === '/ws') {
+          if (request.headers.upgrade !== 'websocket') {
+            return HttpServerResponse.text('Expected Upgrade: websocket', {
+              status: 426,
+            })
+          }
+          return yield* hubDO.getByName('default').fetch(request)
+        }
+        return yield* apiHandler
+      }),
+    }
   }).pipe(
     Effect.provide(
       Layer.mergeAll(

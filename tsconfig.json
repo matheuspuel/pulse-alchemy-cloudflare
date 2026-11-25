@@ -21,5 +21,6 @@
     "noUncheckedSideEffectImports": true,
     "noUncheckedIndexedAccess": true,
     "forceConsistentCasingInFileNames": true
-  }
+  },
+  "exclude": ["node_modules", "web"]
 }
