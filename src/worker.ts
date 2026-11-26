@@ -1,5 +1,7 @@
 import * as Axiom from '@alchemy.run/axiom'
 import * as Cloudflare from '@alchemy.run/cloudflare'
+import * as Output from 'alchemy/Output'
+import { Stage } from 'alchemy/Stage'
 import {
   Array,
   Config,
@@ -111,7 +113,12 @@ const BearerTokenAuthenticationDefault = Layer.effect(
 
 export default Cloudflare.Worker(
   'Worker',
-  { main: import.meta.url },
+  {
+    main: import.meta.url,
+    name: Stage.useSync(stage =>
+      stage === 'prod' ? 'pulse-api' : undefined,
+    ).pipe(Output.fromEffect),
+  },
   Effect.gen(function* () {
     const monitorHttpClient = (yield* HttpClient.HttpClient).pipe(
       HttpClient.filterStatusOk,

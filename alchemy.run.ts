@@ -12,8 +12,10 @@ export default Alchemy.Stack(
     providers: Layer.mergeAll(Cloudflare.providers(), Axiom.providers()),
   },
   Effect.gen(function* () {
+    const stack = yield* Alchemy.Stack
     const worker = yield* Worker
     const web = yield* Cloudflare.Website.Vite('Website', {
+      name: stack.stage === 'prod' ? 'pulse' : undefined,
       rootDir: './web',
       assets: { notFoundHandling: 'single-page-application' },
       env: {
