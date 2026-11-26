@@ -1,3 +1,4 @@
+import * as Axiom from '@alchemy.run/axiom'
 import * as Cloudflare from '@alchemy.run/cloudflare'
 import {
   Array,
@@ -28,6 +29,7 @@ import {
 } from 'effect/http-api'
 import HubDO from './hubDO'
 import MonitorDO from './monitorDO'
+import { Ingest, Logs, Traces } from './observability'
 import { Checks, ChecksDead, ChecksMessage } from './queues'
 import { CheckRepository } from './repositories/Check'
 import { DeadLetterRepository } from './repositories/DeadLetter'
@@ -124,80 +126,92 @@ export default Cloudflare.Worker(
     const checks = yield* Checks
     const checksDead = yield* ChecksDead
 
-    yield* Cloudflare.Workers.cron('* * * * *', controller =>
-      Effect.gen(function* () {
-        const scheduledTime = DateTime.startOf(
-          DateTime.makeUnsafe(controller.scheduledTime),
-          'minute',
-        )
-        const monitors = yield* monitorRepository.list()
-        const dueMonitors = monitors.filter(monitor =>
-          isDue(DateTime.makeUnsafe(scheduledTime), monitor.interval),
-        )
-        const encodedList = yield* Schema.encodeEffect(
-          Schema.Array(Schema.toCodecJson(ChecksMessage)),
-        )(
-          dueMonitors.map(monitor => ({
-            monitor,
-            scheduledTime: DateTime.makeUnsafe(scheduledTime),
-          })),
-        )
-        const batches = Array.chunksOf(encodedList, 100)
-        yield* Effect.forEach(batches, batch =>
-          checksWrite.sendBatch(batch.map(body => ({ body }))),
-        )
-      }).pipe(Effect.tapCause(e => Effect.logError(e))),
+    yield* Cloudflare.Workers.cron(
+      '* * * * *',
+      Effect.fn('Worker.cron')(
+        function* (controller) {
+          const scheduledTime = DateTime.startOf(
+            DateTime.makeUnsafe(controller.scheduledTime),
+            'minute',
+          )
+          const monitors = yield* monitorRepository.list()
+          const dueMonitors = monitors.filter(monitor =>
+            isDue(DateTime.makeUnsafe(scheduledTime), monitor.interval),
+          )
+          const encodedList = yield* Schema.encodeEffect(
+            Schema.Array(Schema.toCodecJson(ChecksMessage)),
+          )(
+            dueMonitors.map(monitor => ({
+              monitor,
+              scheduledTime: DateTime.makeUnsafe(scheduledTime),
+            })),
+          )
+          const batches = Array.chunksOf(encodedList, 100)
+          yield* Effect.forEach(batches, batch =>
+            checksWrite.sendBatch(batch.map(body => ({ body }))),
+          )
+        },
+        Effect.tapCause(e => Effect.logError(e)),
+      ),
     )
 
     yield* Cloudflare.Queues.consumeQueueMessages(
       checks,
       { batchSize: 5, maxRetries: 3, deadLetterQueue: checksDead },
       messages =>
-        Stream.runForEach(messages, message =>
-          Effect.gen(function* () {
-            const data = yield* Schema.decodeUnknownEffect(
-              Schema.toCodecJson(ChecksMessage),
-            )(message.body)
-            const startedAt = yield* DateTime.now
-            const [duration, result] = yield* monitorHttpClient
-              .get(data.monitor.url)
-              .pipe(Effect.result, Effect.timed)
-            const monitorStub = yield* monitorDO.getByName(data.monitor.id)
-            const checkResult: CheckResult = {
-              ok: Result.isSuccess(result),
-              scheduledTime: data.scheduledTime,
-              checkedAt: startedAt,
-              latency: duration,
-              interval: data.monitor.interval,
-            }
-            yield* checkRepository.create({
-              ...checkResult,
-              monitorId: data.monitor.id,
-            })
-            yield* monitorStub.recordResult(checkResult)
-            const state = yield* monitorStub.getState()
-            yield* hubDO.getByName('default').broadcast(
-              yield* MonitorEvent.toJsonEncoded({
-                _tag: 'changeMonitorState',
+        Stream.runForEach(
+          messages,
+          Effect.fn('Worker.checks.consumeQueueMessages')(
+            function* (message) {
+              const data = yield* Schema.decodeUnknownEffect(
+                Schema.toCodecJson(ChecksMessage),
+              )(message.body)
+              const startedAt = yield* DateTime.now
+              const [duration, result] = yield* monitorHttpClient
+                .get(data.monitor.url)
+                .pipe(Effect.result, Effect.timed)
+              const monitorStub = yield* monitorDO.getByName(data.monitor.id)
+              const checkResult: CheckResult = {
+                ok: Result.isSuccess(result),
+                scheduledTime: data.scheduledTime,
+                checkedAt: startedAt,
+                latency: duration,
+                interval: data.monitor.interval,
+              }
+              yield* checkRepository.create({
+                ...checkResult,
                 monitorId: data.monitor.id,
-                state: state,
-              }),
-            )
-            message.ack()
-          }).pipe(
-            Effect.catchCause(e =>
-              Effect.gen(function* () {
-                message.retry()
-                yield* Effect.logError(e)
-              }),
-            ),
+              })
+              yield* monitorStub.recordResult(checkResult)
+              const state = yield* monitorStub.getState()
+              yield* hubDO.getByName('default').broadcast(
+                yield* MonitorEvent.toJsonEncoded({
+                  _tag: 'changeMonitorState',
+                  monitorId: data.monitor.id,
+                  state: state,
+                }),
+              )
+              message.ack()
+            },
+            (effect, message) =>
+              Effect.catchCause(effect, e =>
+                Effect.gen(function* () {
+                  message.retry()
+                  yield* Effect.logError(e)
+                }),
+              ),
           ),
         ),
     )
 
     yield* Cloudflare.Queues.consumeQueueMessages(checksDead, messages =>
-      Stream.runForEach(messages, message =>
-        deadLetterRepository.create({ body: message.body }),
+      Stream.runForEach(
+        messages,
+        Effect.fn('Worker.checksDead.consumeQueueMessages')(
+          function* (message) {
+            yield* deadLetterRepository.create({ body: message.body })
+          },
+        ),
       ).pipe(Effect.tapCause(e => Effect.logError(e))),
     )
 
@@ -305,6 +319,10 @@ export default Cloudflare.Worker(
           DeadLetterRepository.Default,
         ).pipe(Layer.provide(Cloudflare.D1.QueryDatabaseBinding)),
         PlatformServices,
+      ).pipe(
+        Layer.provideMerge(
+          Axiom.Telemetry({ token: Ingest, traces: Traces, logs: Logs }),
+        ),
       ),
     ),
   ),

@@ -21,7 +21,7 @@ export default class HubDO extends Cloudflare.DurableObject<HubDO>()(
           const [response, socket] = yield* Cloudflare.upgrade()
           const string = yield* Schema.encodeEffect(
             Schema.fromJsonString(Schema.toCodecJson(MonitorEvent)),
-          )({ _tag: 'snapshot', snapshot: yield* monitorListViewStore.get })
+          )({ _tag: 'snapshot', snapshot: yield* monitorListViewStore.get() })
           yield* socket.send(string)
           return response
         }),
@@ -60,26 +60,32 @@ const MonitorListViewStore = Effect.gen(function* () {
   const ref = yield* Ref.make<Option.Option<MonitorListView>>(Option.none())
   const monitorRepository = yield* MonitorRepository
   const monitorDO = yield* MonitorDO
-  const fetchData = Effect.gen(function* () {
-    const data: MonitorListView = {
-      list: yield* Effect.forEach(yield* monitorRepository.list(), monitor =>
-        Effect.gen(function* () {
-          const stub = yield* monitorDO.getByName(monitor.id)
-          const state = yield* stub.getState()
-          return { monitor, state }
-        }),
-      ),
-    }
-    return data
-  })
-  const get = Effect.gen(function* () {
+  const fetchData = Effect.fn('HubDO.MonitorListViewStore.fetchData')(
+    function* () {
+      const data: MonitorListView = {
+        list: yield* Effect.forEach(yield* monitorRepository.list(), monitor =>
+          Effect.gen(function* () {
+            const stub = yield* monitorDO.getByName(monitor.id)
+            const state = yield* stub.getState()
+            return { monitor, state }
+          }),
+        ),
+      }
+      return data
+    },
+  )
+  const get = Effect.fn('HubDO.MonitorListViewStore.get')(function* () {
     const value = yield* Ref.get(ref)
     if (Option.isSome(value)) return value.value
-    const data = yield* fetchData
+    const data = yield* fetchData()
     yield* Ref.set(ref, Option.some(data))
     return data
   })
-  const set = (value: MonitorListView) => Ref.set(ref, Option.some(value))
+  const set = Effect.fn('HubDO.MonitorListViewStore.set')(function* (
+    value: MonitorListView,
+  ) {
+    yield* Ref.set(ref, Option.some(value))
+  })
   const update = (f: (value: MonitorListView) => MonitorListView) =>
     Ref.update(ref, Option.map(f))
   const applyEvent_ = Effect.fn(function* (event: MonitorEvent) {

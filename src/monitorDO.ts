@@ -35,12 +35,14 @@ export default class MonitorDO extends Cloudflare.RpcDurableObject<MonitorDO>()(
       )
       return MonitorDORpc.toLayer({
         getState: () =>
-          stateStore.get.pipe(Effect.catchTags({ SchemaError: Effect.die })),
+          stateStore.get().pipe(Effect.catchTags({ SchemaError: Effect.die })),
         getIncidents: () =>
-          incidentStore.get.pipe(Effect.catchTags({ SchemaError: Effect.die })),
+          incidentStore
+            .get()
+            .pipe(Effect.catchTags({ SchemaError: Effect.die })),
         recordResult: result =>
           Effect.gen(function* () {
-            const state = yield* stateStore.get
+            const state = yield* stateStore.get()
             const outcome = step({
               state,
               check: result,
@@ -119,14 +121,16 @@ export const step = (args: {
 
 const StateStore = Effect.gen(function* () {
   const durableState = yield* Cloudflare.DurableObjectState
-  const get = Effect.gen(function* () {
+  const get = Effect.fn('MonitorDO.StateStore.get')(function* () {
     const data = yield* durableState.storage.get('state')
     if (!data) return MonitorState.initial
     return yield* Schema.decodeUnknownEffect(Schema.toCodecJson(MonitorState))(
       data,
     )
   })
-  const set = Effect.fn(function* (state: MonitorState) {
+  const set = Effect.fn('MonitorDO.StateStore.set')(function* (
+    state: MonitorState,
+  ) {
     const data = yield* Schema.encodeEffect(Schema.toCodecJson(MonitorState))(
       state,
     )
@@ -135,21 +139,23 @@ const StateStore = Effect.gen(function* () {
   const update = Effect.fn(function* (
     fn: (state: MonitorState) => MonitorState,
   ) {
-    yield* set(fn(yield* get))
+    yield* set(fn(yield* get()))
   })
   return { get, set, update }
 })
 
 const IncidentStore = Effect.gen(function* () {
   const durableState = yield* Cloudflare.DurableObjectState
-  const get = Effect.gen(function* () {
+  const get = Effect.fn('MonitorDO.IncidentStore.get')(function* () {
     const data = yield* durableState.storage.get('incidents')
     if (!data) return []
     return yield* Schema.decodeUnknownEffect(
       Schema.toCodecJson(Schema.Array(Incident)),
     )(data)
   })
-  const set = Effect.fn(function* (incidents: readonly Incident[]) {
+  const set = Effect.fn('MonitorDO.IncidentStore.set')(function* (
+    incidents: readonly Incident[],
+  ) {
     const data = yield* Schema.encodeEffect(
       Schema.toCodecJson(Schema.Array(Incident)),
     )(incidents)
@@ -158,24 +164,28 @@ const IncidentStore = Effect.gen(function* () {
   const update = Effect.fn(function* (
     fn: (incidents: readonly Incident[]) => readonly Incident[],
   ) {
-    yield* set(fn(yield* get))
+    yield* set(fn(yield* get()))
   })
-  const openIncident = Effect.fn(function* (result: CheckResult) {
-    yield* update(_ => [
-      ..._,
-      { startedAt: result.scheduledTime, endedAt: null },
-    ])
-  })
-  const closeIncident = Effect.fn(function* (result: CheckResult) {
-    const incidents = yield* get
-    if (Array.isReadonlyArrayNonEmpty(incidents)) {
-      yield* set(
-        Array.modifyLastNonEmpty(incidents, _ => ({
-          ..._,
-          endedAt: result.scheduledTime,
-        })),
-      )
-    }
-  })
+  const openIncident = Effect.fn('MonitorDO.IncidentStore.openIncident')(
+    function* (result: CheckResult) {
+      yield* update(_ => [
+        ..._,
+        { startedAt: result.scheduledTime, endedAt: null },
+      ])
+    },
+  )
+  const closeIncident = Effect.fn('MonitorDO.IncidentStore.closeIncident')(
+    function* (result: CheckResult) {
+      const incidents = yield* get()
+      if (Array.isReadonlyArrayNonEmpty(incidents)) {
+        yield* set(
+          Array.modifyLastNonEmpty(incidents, _ => ({
+            ..._,
+            endedAt: result.scheduledTime,
+          })),
+        )
+      }
+    },
+  )
   return { get, set, update, openIncident, closeIncident }
 })

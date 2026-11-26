@@ -1,12 +1,16 @@
+import * as Axiom from '@alchemy.run/axiom'
 import * as Cloudflare from '@alchemy.run/cloudflare'
 import * as Alchemy from 'alchemy'
-import { Effect } from 'effect'
+import { Effect, Layer } from 'effect'
 import { Database } from './src/database'
 import Worker from './src/worker'
 
 export default Alchemy.Stack(
   'Pulse',
-  { providers: Cloudflare.providers(), state: Cloudflare.state() },
+  {
+    state: Cloudflare.state(),
+    providers: Layer.mergeAll(Cloudflare.providers(), Axiom.providers()),
+  },
   Effect.gen(function* () {
     const worker = yield* Worker
     const web = yield* Cloudflare.Website.Vite('Website', {
