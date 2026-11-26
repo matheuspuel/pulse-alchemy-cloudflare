@@ -52,13 +52,11 @@ test(
   'Monitors CRUD',
   Effect.gen(function* () {
     const api = yield* getApiClient
-    yield* Effect.addFinalizer(() =>
-      Effect.gen(function* () {
-        yield* Effect.forEach(yield* api.Monitors.list(), monitor =>
-          api.Monitors.delete({ params: { id: monitor.id } }),
-        )
-      }).pipe(Effect.orDie),
-    )
+    yield* Effect.gen(function* () {
+      yield* Effect.forEach(yield* api.Monitors.list(), monitor =>
+        api.Monitors.delete({ params: { id: monitor.id } }),
+      )
+    }).pipe(Effect.orDie)
 
     expect(yield* api.Monitors.list()).toStrictEqual([])
     const created = yield* api.Monitors.create({

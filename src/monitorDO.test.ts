@@ -17,7 +17,7 @@ describe('monitorDO step', () => {
       check: {
         ok: false,
         scheduledTime,
-        checkedAt: DateTime.nowUnsafe(),
+        checkedAt: scheduledTime,
         latency: Duration.seconds(1),
         interval: Duration.minutes(1),
       },
@@ -31,7 +31,7 @@ describe('monitorDO step', () => {
         failures: 1,
         lastSchedule: scheduledTime,
         lastCheckedAt: scheduledTime,
-        lastLatency: Duration.seconds(1),
+        lastLatency: null,
         stale: false,
       },
     })
@@ -51,7 +51,7 @@ describe('monitorDO step', () => {
       check: {
         ok: false,
         scheduledTime,
-        checkedAt: DateTime.nowUnsafe(),
+        checkedAt: scheduledTime,
         latency: Duration.seconds(1),
         interval: Duration.minutes(1),
       },
@@ -65,7 +65,7 @@ describe('monitorDO step', () => {
         failures: 1,
         lastSchedule: scheduledTime,
         lastCheckedAt: scheduledTime,
-        lastLatency: Duration.seconds(1),
+        lastLatency: null,
         stale: false,
       },
     })
@@ -85,7 +85,7 @@ describe('monitorDO step', () => {
       check: {
         ok: false,
         scheduledTime,
-        checkedAt: DateTime.nowUnsafe(),
+        checkedAt: scheduledTime,
         latency: Duration.seconds(1),
         interval: Duration.minutes(1),
       },
@@ -99,7 +99,7 @@ describe('monitorDO step', () => {
         failures: 3,
         lastSchedule: scheduledTime,
         lastCheckedAt: scheduledTime,
-        lastLatency: Duration.seconds(1),
+        lastLatency: null,
         stale: false,
       },
     })
@@ -119,7 +119,7 @@ describe('monitorDO step', () => {
       check: {
         ok: false,
         scheduledTime,
-        checkedAt: DateTime.nowUnsafe(),
+        checkedAt: scheduledTime,
         latency: Duration.seconds(1),
         interval: Duration.minutes(1),
       },
@@ -133,7 +133,7 @@ describe('monitorDO step', () => {
         failures: 4,
         lastSchedule: scheduledTime,
         lastCheckedAt: scheduledTime,
-        lastLatency: Duration.seconds(1),
+        lastLatency: null,
         stale: false,
       },
     })
@@ -153,7 +153,7 @@ describe('monitorDO step', () => {
       check: {
         ok: true,
         scheduledTime,
-        checkedAt: DateTime.nowUnsafe(),
+        checkedAt: scheduledTime,
         latency: Duration.seconds(1),
         interval: Duration.minutes(1),
       },
@@ -189,7 +189,7 @@ describe('monitorDO step', () => {
       check: {
         ok: true,
         scheduledTime,
-        checkedAt: DateTime.nowUnsafe(),
+        checkedAt: scheduledTime,
         latency: Duration.seconds(1),
         interval: Duration.minutes(1),
       },
@@ -205,7 +205,7 @@ describe('monitorDO step', () => {
       check: {
         ok: true,
         scheduledTime: olderScheduledTime,
-        checkedAt: DateTime.nowUnsafe(),
+        checkedAt: olderScheduledTime,
         latency: Duration.seconds(1),
         interval: Duration.minutes(1),
       },
@@ -232,7 +232,7 @@ describe('monitorDO step', () => {
       check: {
         ok: true,
         scheduledTime,
-        checkedAt: DateTime.nowUnsafe(),
+        checkedAt: scheduledTime,
         latency: Duration.seconds(1),
         interval: Duration.minutes(1),
       },
